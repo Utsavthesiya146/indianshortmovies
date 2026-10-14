@@ -1,0 +1,175 @@
+name: 🚀 Build & Release iOS (App Store / TestFlight)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_to_appstore:
+        description: 'Upload build directly to TestFlight / App Store Connect?'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  ios-release:
+    name: 🍎 Build App Store IPA
+    runs-on: macos-latest
+
+    steps:
+      # ── 1. Checkout main repo ──────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Checkout mobile-app branch (Capacitor code) ─────
+      - name: 📱 Checkout mobile-app branch
+        uses: actions/checkout@v4
+        with:
+          ref: mobile-app
+          path: apps/capacitor_app
+
+      # ── 3. Node.js setup ───────────────────────────────────
+      - name: ⚙️ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/capacitor_app/package-lock.json
+
+      # ── 4. Install npm dependencies ────────────────────────
+      - name: 📦 Install npm dependencies
+        working-directory: apps/capacitor_app
+        run: npm install
+
+      # ── 5. Run mobile patch scripts ────────────────────────
+      - name: 🔧 Run patch scripts
+        working-directory: apps/capacitor_app
+        run: |
+          node patch_html.js
+          node patch_js.js || echo "patch_js.js skipped"
+
+      # ── 6. Capacitor sync iOS ──────────────────────────────
+      - name: 🔄 Capacitor sync iOS
+        working-directory: apps/capacitor_app
+        run: npx cap sync ios
+
+      # ── 7. Setup Ruby & CocoaPods ──────────────────────────
+      - name: 💎 Setup Ruby for CocoaPods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: 🍫 Install CocoaPods
+        run: gem install cocoapods --no-document
+
+      - name: 📦 Pod install
+        working-directory: apps/capacitor_app/ios/App
+        run: pod install --repo-update
+
+      # ── 8. Install Apple Certificates & Profile ───────────
+      - name: 🔐 Install Apple Certificate and Provisioning Profile
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Only proceed if secrets are provided
+          if [ -z "$BUILD_CERTIFICATE_BASE64" ]; then
+            echo "⚠️ BUILD_CERTIFICATE_BASE64 not configured yet in GitHub Secrets."
+            echo "Please configure Apple Distribution Certificate to build signed IPA."
+            exit 1
+          fi
+
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PP_PATH=$RUNNER_TEMP/build_profile.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # Import certificate and profile from secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Apply provisioning profile
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      # ── 9. Create ExportOptions.plist ──────────────────────
+      - name: ⚙️ Generate ExportOptions.plist
+        working-directory: apps/capacitor_app
+        run: |
+          cat <<EOF > ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.indianshortfilms.app</key>
+                  <string>${{ secrets.PROVISIONING_PROFILE_NAME }}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+      # ── 10. Archive iOS App ────────────────────────────────
+      - name: 📦 Archive Xcode Project
+        working-directory: apps/capacitor_app
+        run: |
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath ios/App.xcarchive
+
+      # ── 11. Export .IPA ────────────────────────────────────
+      - name: 📱 Export IPA (App Store Package)
+        working-directory: apps/capacitor_app
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath ios/App.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath ios/build_output
+
+      # ── 12. Upload IPA Artifact ────────────────────────────
+      - name: ⬆️ Upload IPA Artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: IndianShortFilms-AppStore-IPA-Run-${{ github.run_number }}
+          path: apps/capacitor_app/ios/build_output/*.ipa
+          retention-days: 30
+
+      # ── 13. Upload to App Store Connect / TestFlight (Optional) ──
+      - name: 🚀 Upload to TestFlight
+        if: ${{ github.event.inputs.upload_to_appstore == 'true' }}
+        working-directory: apps/capacitor_app
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo -n "$APPSTORE_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+          
+          IPA_FILE=$(find ios/build_output -name "*.ipa" | head -n 1)
+          echo "Uploading $IPA_FILE to App Store Connect..."
+          
+          xcrun altool --upload-app \
+            -f "$IPA_FILE" \
+            -t ios \
+            --apiKey "$APPSTORE_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID"
