@@ -1,6 +1,6 @@
 {
   "appId": "com.indianshortfilms.app",
-  "appName": "Indian Short Films",
+  "appName": "Indian Short Movies",
   "webDir": "public",
   "bundledWebRuntime": false,
   "plugins": {

@@ -2,7 +2,25 @@ node_modules/
 android/app/build/
 android/.gradle/
 android/local.properties
+android/app/google-services.json
 ios/App/Pods/
 ios/App/build/
 ios/App/DerivedData/
+ios/App/.xcode.env.local
 *.DS_Store
+
+# Secrets & Signing
+*.p12
+*.mobileprovision
+*.cer
+*.keystore
+*.jks
+.env
+.env.local
+
+# Build outputs
+*.ipa
+*.apk
+*.aab
+dist/
+public/index.html.bak
