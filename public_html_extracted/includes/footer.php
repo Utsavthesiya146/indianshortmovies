@@ -48,6 +48,7 @@ if (!isset($base_url)) {
             <li><a href="javascript:void(0)" onclick="openSubmitFilmModal()" class="hover:text-cinema-accent transition-colors">Submit Film</a></li>
             <li><a href="<?php echo $base_url; ?>filmmakers.php" class="hover:text-cinema-accent transition-colors">Filmmaker Directory</a></li>
             <li><a href="<?php echo $base_url; ?>contact.php" class="hover:text-cinema-accent transition-colors">Contact Us</a></li>
+            <li><a href="<?php echo $base_url; ?>privacy.php" class="hover:text-cinema-accent transition-colors">Privacy Policy</a></li>
           </ul>
         </div>
       </div>

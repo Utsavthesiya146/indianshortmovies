@@ -41,6 +41,12 @@ if ($action === 'delete_one' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8">
 <title>Film Database Manager</title>
+<link rel="icon" type="image/x-icon" href="../favicon.ico?v=2">
+<link rel="shortcut icon" href="../favicon.ico?v=2">
+<link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png?v=2">
+<link rel="icon" type="image/png" href="../indianshortmovies.png?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png?v=2">
 <style>
 body { background: #0a0a0f; color: white; font-family: sans-serif; padding: 2rem; }
 h1 { color: #e94560; }

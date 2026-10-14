@@ -7,3 +7,32 @@ ios/App/build/
 ios/App/DerivedData/
 *.DS_Store
 *.zip
+
+# Environment & Secrets (NEVER commit these!)
+.env
+.env.local
+.env.production
+*.env
+
+# iOS Code Signing (NEVER commit these!)
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+
+# Android Keystore (NEVER commit these!)
+*.keystore
+*.jks
+
+# Xcode
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+ios/App/Pods/
+ios/App/.xcode.env.local
+
+# Build outputs
+dist/
+build/
+*.ipa
+*.apk
+*.aab

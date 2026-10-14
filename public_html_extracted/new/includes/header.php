@@ -31,6 +31,15 @@ if (!isset($current_page)) {
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   
+  <!-- Favicon / Brand Icons -->
+  <link rel="icon" type="image/x-icon" href="<?php echo $base_url; ?>favicon.ico?v=2">
+  <link rel="shortcut icon" href="<?php echo $base_url; ?>favicon.ico?v=2">
+  <link rel="icon" type="image/png" sizes="32x32" href="<?php echo $base_url; ?>favicon-32x32.png?v=2">
+  <link rel="icon" type="image/png" sizes="16x16" href="<?php echo $base_url; ?>favicon-16x16.png?v=2">
+  <link rel="icon" type="image/png" href="<?php echo $base_url; ?>indianshortmovies.png?v=2">
+  <link rel="apple-touch-icon" sizes="180x180" href="<?php echo $base_url; ?>apple-touch-icon.png?v=2">
+  <link rel="manifest" href="<?php echo $base_url; ?>site.webmanifest">
+  
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
