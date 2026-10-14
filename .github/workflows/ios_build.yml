@@ -44,26 +44,54 @@ jobs:
         working-directory: apps/capacitor_app
         run: node patch_js.js || echo "patch_js.js skipped or not needed"
 
-      # ── 6. Capacitor sync ──────────────────────────────────
+      # ── 6. Capacitor sync (generates Podfile!) ─────────────
       - name: 🔄 Capacitor sync iOS
         working-directory: apps/capacitor_app
         run: npx cap sync ios
 
-      # ── 7. CocoaPods install ───────────────────────────────
-      - name: 🍫 Install CocoaPods dependencies
+      # ── 7. Verify Podfile was generated ───────────────────
+      - name: 🔍 Verify iOS project structure
+        working-directory: apps/capacitor_app
+        run: |
+          echo "=== iOS Directory Contents ==="
+          ls -la ios/App/
+          echo ""
+          echo "=== Checking Podfile ==="
+          if [ -f "ios/App/Podfile" ]; then
+            echo "✅ Podfile found!"
+            cat ios/App/Podfile
+          else
+            echo "❌ Podfile NOT found - cap sync may have failed"
+            exit 1
+          fi
+
+      # ── 8. Setup Ruby & CocoaPods (stable version) ────────
+      - name: 💎 Setup Ruby for CocoaPods
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: 🍫 Install CocoaPods
+        run: |
+          gem install cocoapods --no-document
+          pod --version
+
+      # ── 9. Pod install ────────────────────────────────────
+      - name: 📦 Pod install
         working-directory: apps/capacitor_app/ios/App
         run: pod install --repo-update
 
-      # ── 8. Show available Xcode schemes (debug info) ───────
+      # ── 10. Show available Xcode schemes (debug info) ─────
       - name: 🔍 List Xcode schemes
         working-directory: apps/capacitor_app
         run: |
           xcodebuild -workspace ios/App/App.xcworkspace -list
 
-      # ── 9. Build for iOS Simulator (no signing needed) ─────
+      # ── 11. Build for iOS Simulator (no signing needed) ───
       - name: 🏗️ Build iOS Simulator App
         working-directory: apps/capacitor_app
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
@@ -74,50 +102,48 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=NO \
-            build | xcpretty || xcodebuild \
-            -workspace ios/App/App.xcworkspace \
-            -scheme App \
-            -sdk iphonesimulator \
-            -configuration Release \
-            -derivedDataPath ios/DerivedData \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            ONLY_ACTIVE_ARCH=NO \
-            build
+            build 2>&1 | tee build.log | tail -50
 
-      # ── 10. Package .app into zip for download ─────────────
+      # ── 12. Package .app into zip for download ────────────
       - name: 📦 Package Simulator build
         working-directory: apps/capacitor_app
         run: |
           mkdir -p Payload
-          APP_PATH=$(find ios/DerivedData/Build/Products -name "*.app" | head -1)
-          echo "Found app at: $APP_PATH"
+          APP_PATH=$(find ios/DerivedData/Build/Products -name "*.app" -not -path "*Test*" | head -1)
+          echo "📱 Found app at: $APP_PATH"
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app found!"
+            find ios/DerivedData -name "*.app" 2>/dev/null || echo "No DerivedData"
+            exit 1
+          fi
           cp -r "$APP_PATH" Payload/App.app
           zip -r IndianShortFilms-iOS-Simulator.zip Payload/
+          echo "✅ Packaged successfully!"
+          ls -lh IndianShortFilms-iOS-Simulator.zip
 
-      # ── 11. Upload artifact to GitHub ──────────────────────
-      - name: ⬆️ Upload iOS Simulator build
+      # ── 13. Upload artifact to GitHub ─────────────────────
+      - name: ⬆️ Upload iOS Simulator build artifact
         uses: actions/upload-artifact@v4
         with:
           name: IndianShortFilms-iOS-Simulator-Build-${{ github.run_number }}
           path: apps/capacitor_app/IndianShortFilms-iOS-Simulator.zip
           retention-days: 30
 
-      # ── 12. Build summary ─────────────────────────────────
+      # ── 14. Build summary ─────────────────────────────────
       - name: ✅ Build Summary
+        if: success()
         run: |
-          echo "## 🎉 iOS Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎉 iOS Simulator Build Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| App Name | Indian Short Movies |" >> $GITHUB_STEP_SUMMARY
           echo "| Bundle ID | com.indianshortfilms.app |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Type | iOS Simulator |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Type | iOS Simulator (no cert needed) |" >> $GITHUB_STEP_SUMMARY
           echo "| Run # | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📲 How to test:" >> $GITHUB_STEP_SUMMARY
+          echo "### 📲 How to test on Mac:" >> $GITHUB_STEP_SUMMARY
           echo "1. Download artifact ZIP from Actions tab" >> $GITHUB_STEP_SUMMARY
-          echo "2. Extract to get App.app" >> $GITHUB_STEP_SUMMARY
-          echo "3. Open Xcode Simulator on Mac" >> $GITHUB_STEP_SUMMARY
-          echo "4. Drag App.app into Simulator window" >> $GITHUB_STEP_SUMMARY
+          echo "2. Extract → get **App.app** from Payload folder" >> $GITHUB_STEP_SUMMARY
+          echo "3. Open **Xcode → Simulator** (or \`open -a Simulator\`)" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Drag App.app** into Simulator window" >> $GITHUB_STEP_SUMMARY
