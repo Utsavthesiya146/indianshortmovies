@@ -71,28 +71,45 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           if [ -z "$BUILD_CERTIFICATE_BASE64" ]; then
-            echo "❌ BUILD_CERTIFICATE_BASE64 not configured yet in GitHub Secrets."
-            echo "Please configure Apple Distribution Certificate (.p12) to build signed IPA."
+            echo "❌ BUILD_CERTIFICATE_BASE64 not configured in GitHub Secrets."
             exit 1
           fi
 
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PP_PATH=$RUNNER_TEMP/build_profile.mobileprovision
+          export CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          export PP_PATH=$RUNNER_TEMP/build_profile.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+          # Safe Base64 decoding via Node.js
+          node -e "fs.writeFileSync(process.env.CERTIFICATE_PATH, Buffer.from(process.env.BUILD_CERTIFICATE_BASE64.replace(/\s+/g, ''), 'base64'))"
+          node -e "fs.writeFileSync(process.env.PP_PATH, Buffer.from(process.env.BUILD_PROVISION_PROFILE_BASE64.replace(/\s+/g, ''), 'base64'))"
 
+          echo "Decoded files:"
+          ls -lh $CERTIFICATE_PATH $PP_PATH
+
+          # Create keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | tr -d '"')
 
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          # Import p12 certificate (with automatic legacy fallback for OpenSSL 3 compatibility)
+          if ! security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH; then
+            echo "⚠️ Standard import failed, re-exporting with legacy encryption..."
+            openssl pkcs12 -in $CERTIFICATE_PATH -passin "pass:$P12_PASSWORD" -nodes -out $RUNNER_TEMP/temp.pem
+            openssl pkcs12 -export -in $RUNNER_TEMP/temp.pem -out $RUNNER_TEMP/legacy.p12 -passout "pass:$P12_PASSWORD" -legacy || \
+            /usr/bin/openssl pkcs12 -export -in $RUNNER_TEMP/temp.pem -out $RUNNER_TEMP/legacy.p12 -passout "pass:$P12_PASSWORD"
+            security import $RUNNER_TEMP/legacy.p12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          fi
 
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          echo "=== Code Signing Identities in Keychain ==="
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+
+          # Install Provisioning Profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+          echo "✅ Provisioning Profile installed successfully"
 
       # ── 9. Create ExportOptions.plist ──────────────────────
       - name: ⚙️ Generate ExportOptions.plist
@@ -136,6 +153,7 @@ jobs:
             -archivePath ios/App.xcarchive \
             -destination 'generic/platform=iOS' \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
 
