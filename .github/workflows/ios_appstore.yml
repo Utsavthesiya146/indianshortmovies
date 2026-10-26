@@ -7,11 +7,11 @@ on:
         description: 'Upload build directly to TestFlight / App Store Connect?'
         required: true
         type: boolean
-        default: false
+        default: true
 
 jobs:
   ios-release:
-    name: 🍎 Build App Store IPA
+    name: 🍎 Build & Upload App Store IPA
     runs-on: macos-latest
 
     steps:
@@ -171,7 +171,7 @@ jobs:
             -exportOptionsPlist ExportOptions.plist \
             -exportPath ios/build_output
 
-      # ── 12. Upload IPA Artifact ────────────────────
+      # ── 12. Upload IPA Artifact ────────────────────────────
       - name: ⬆️ Upload IPA Artifact to GitHub
         uses: actions/upload-artifact@v4
         with:
@@ -179,27 +179,22 @@ jobs:
           path: apps/capacitor_app/ios/build_output/*.ipa
           retention-days: 30
 
-      # ── 13. Upload to App Store Connect / TestFlight (Optional) ──
-      - name: 🚀 Upload to TestFlight
+      # ── 13. Upload to App Store Connect / TestFlight ─────
+      - name: 🚀 Upload to App Store Connect
         if: ${{ github.event.inputs.upload_to_appstore == 'true' }}
         working-directory: apps/capacitor_app
         env:
-          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          KEY_ID: "V9U66N3N34"
+          ISSUER_ID: "f1ae88c3-a7a4-4bb4-b3c1-5e7f7cef4ae1"
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
-          echo -n "$APPSTORE_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+          cp $RUNNER_TEMP/certs/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
+          ls -la ~/.appstoreconnect/private_keys/
           
           IPA_FILE=$(find ios/build_output -name "*.ipa" | head -n 1)
-          echo "Uploading $IPA_FILE to App Store Connect..."
+          echo "🚀 Uploading $IPA_FILE to App Store Connect via altool..."
           
           xcrun altool --upload-package "$IPA_FILE" \
             --type ios \
-            --apiKey "$APPSTORE_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID" || \
-          xcrun altool --upload-app \
-            -f "$IPA_FILE" \
-            -t ios \
-            --apiKey "$APPSTORE_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID"
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
