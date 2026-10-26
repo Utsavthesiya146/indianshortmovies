@@ -51,18 +51,16 @@ jobs:
         working-directory: apps/capacitor_app
         run: npx cap sync ios
 
-      # ── 7. Setup Ruby & CocoaPods ──────────────────────────
-      - name: 💎 Setup Ruby for CocoaPods
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-
-      - name: 🍫 Install CocoaPods
-        run: gem install cocoapods --no-document
-
-      - name: 📦 Pod install
-        working-directory: apps/capacitor_app/ios/App
-        run: pod install --repo-update
+      # ── 7. CocoaPods install (if Podfile exists) ────────────
+      - name: 📦 Pod install (if Podfile exists)
+        working-directory: apps/capacitor_app
+        run: |
+          if [ -f "ios/App/Podfile" ]; then
+            echo "Podfile detected, running pod install..."
+            cd ios/App && pod install --repo-update
+          else
+            echo "No Podfile detected. Using Swift Package Manager (Capacitor 6 default)."
+          fi
 
       # ── 8. Install Apple Certificates & Profile ───────────
       - name: 🔐 Install Apple Certificate and Provisioning Profile
@@ -72,33 +70,27 @@ jobs:
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          # Only proceed if secrets are provided
           if [ -z "$BUILD_CERTIFICATE_BASE64" ]; then
-            echo "⚠️ BUILD_CERTIFICATE_BASE64 not configured yet in GitHub Secrets."
-            echo "Please configure Apple Distribution Certificate to build signed IPA."
+            echo "❌ BUILD_CERTIFICATE_BASE64 not configured yet in GitHub Secrets."
+            echo "Please configure Apple Distribution Certificate (.p12) to build signed IPA."
             exit 1
           fi
 
-          # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           PP_PATH=$RUNNER_TEMP/build_profile.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
 
-          # Import certificate and profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
           echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
 
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 
-          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-          # Apply provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
@@ -130,16 +122,28 @@ jobs:
       - name: 📦 Archive Xcode Project
         working-directory: apps/capacitor_app
         run: |
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            BUILD_TARGET="-workspace ios/App/App.xcworkspace"
+          else
+            BUILD_TARGET="-project ios/App/App.xcodeproj"
+          fi
+          echo "Building using: $BUILD_TARGET"
+          
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
+            $BUILD_TARGET \
             -scheme App \
             -configuration Release \
-            -archivePath ios/App.xcarchive
+            -archivePath ios/App.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
 
       # ── 11. Export .IPA ────────────────────────────────────
       - name: 📱 Export IPA (App Store Package)
         working-directory: apps/capacitor_app
         run: |
+          mkdir -p ios/build_output
           xcodebuild -exportArchive \
             -archivePath ios/App.xcarchive \
             -exportOptionsPlist ExportOptions.plist \
@@ -168,6 +172,10 @@ jobs:
           IPA_FILE=$(find ios/build_output -name "*.ipa" | head -n 1)
           echo "Uploading $IPA_FILE to App Store Connect..."
           
+          xcrun altool --upload-package "$IPA_FILE" \
+            --type ios \
+            --apiKey "$APPSTORE_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID" || \
           xcrun altool --upload-app \
             -f "$IPA_FILE" \
             -t ios \

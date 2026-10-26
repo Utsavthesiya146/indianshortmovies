@@ -44,56 +44,36 @@ jobs:
         working-directory: apps/capacitor_app
         run: node patch_js.js || echo "patch_js.js skipped or not needed"
 
-      # ── 6. Capacitor sync (generates Podfile!) ─────────────
+      # ── 6. Capacitor sync (generates project files) ────────
       - name: 🔄 Capacitor sync iOS
         working-directory: apps/capacitor_app
         run: npx cap sync ios
 
-      # ── 7. Verify Podfile was generated ───────────────────
-      - name: 🔍 Verify iOS project structure
+      # ── 7. Check project structure & CocoaPods if needed ──
+      - name: 📦 CocoaPods install (if Podfile exists)
         working-directory: apps/capacitor_app
         run: |
-          echo "=== iOS Directory Contents ==="
-          ls -la ios/App/
-          echo ""
-          echo "=== Checking Podfile ==="
           if [ -f "ios/App/Podfile" ]; then
-            echo "✅ Podfile found!"
-            cat ios/App/Podfile
+            echo "Podfile detected, running pod install..."
+            cd ios/App && pod install --repo-update
           else
-            echo "❌ Podfile NOT found - cap sync may have failed"
-            exit 1
+            echo "No Podfile detected. Using Swift Package Manager (Capacitor 6 default)."
           fi
 
-      # ── 8. Setup Ruby & CocoaPods (stable version) ────────
-      - name: 💎 Setup Ruby for CocoaPods
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'
-
-      - name: 🍫 Install CocoaPods
-        run: |
-          gem install cocoapods --no-document
-          pod --version
-
-      # ── 9. Pod install ────────────────────────────────────
-      - name: 📦 Pod install
-        working-directory: apps/capacitor_app/ios/App
-        run: pod install --repo-update
-
-      # ── 10. Show available Xcode schemes (debug info) ─────
-      - name: 🔍 List Xcode schemes
-        working-directory: apps/capacitor_app
-        run: |
-          xcodebuild -workspace ios/App/App.xcworkspace -list
-
-      # ── 11. Build for iOS Simulator (no signing needed) ───
+      # ── 8. Build for iOS Simulator (no signing needed) ───
       - name: 🏗️ Build iOS Simulator App
         working-directory: apps/capacitor_app
         run: |
           set -o pipefail
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            BUILD_TARGET="-workspace ios/App/App.xcworkspace"
+          else
+            BUILD_TARGET="-project ios/App/App.xcodeproj"
+          fi
+          echo "Building using: $BUILD_TARGET"
+          
           xcodebuild \
-            -workspace ios/App/App.xcworkspace \
+            $BUILD_TARGET \
             -scheme App \
             -sdk iphonesimulator \
             -configuration Release \
@@ -104,7 +84,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             build 2>&1 | tee build.log | tail -50
 
-      # ── 12. Package .app into zip for download ────────────
+      # ── 9. Package .app into zip for download ────────────
       - name: 📦 Package Simulator build
         working-directory: apps/capacitor_app
         run: |
@@ -121,7 +101,7 @@ jobs:
           echo "✅ Packaged successfully!"
           ls -lh IndianShortFilms-iOS-Simulator.zip
 
-      # ── 13. Upload artifact to GitHub ─────────────────────
+      # ── 10. Upload artifact to GitHub ─────────────────────
       - name: ⬆️ Upload iOS Simulator build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -129,7 +109,7 @@ jobs:
           path: apps/capacitor_app/IndianShortFilms-iOS-Simulator.zip
           retention-days: 30
 
-      # ── 14. Build summary ─────────────────────────────────
+      # ── 11. Build summary ─────────────────────────────────
       - name: ✅ Build Summary
         if: success()
         run: |

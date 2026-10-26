@@ -19,6 +19,8 @@ ios/App/DerivedData/
 *.mobileprovision
 *.cer
 *.certSigningRequest
+*.key
+ios_certs/
 
 # Android Keystore (NEVER commit these!)
 *.keystore
