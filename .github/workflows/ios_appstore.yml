@@ -186,15 +186,18 @@ jobs:
         env:
           KEY_ID: "V9U66N3N34"
           ISSUER_ID: "f1ae88c3-a7a4-4bb4-b3c1-5e7f7cef4ae1"
+          APPLE_ID: "6827075952"
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           cp $RUNNER_TEMP/certs/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
           ls -la ~/.appstoreconnect/private_keys/
           
           IPA_FILE=$(find ios/build_output -name "*.ipa" | head -n 1)
-          echo "🚀 Uploading $IPA_FILE to App Store Connect via altool..."
+          echo "🚀 Uploading $IPA_FILE to App Store Connect for Apple ID $APPLE_ID..."
           
           xcrun altool --upload-package "$IPA_FILE" \
             --type ios \
+            --apple-id "$APPLE_ID" \
+            --bundle-id "com.indianshortfilms.app" \
             --apiKey "$KEY_ID" \
             --apiIssuer "$ISSUER_ID"
