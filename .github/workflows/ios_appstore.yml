@@ -185,7 +185,7 @@ jobs:
         working-directory: apps/capacitor_app
         env:
           KEY_ID: "V9U66N3N34"
-          ISSUER_ID: "f1ae88c3-a7a4-4bb4-b3c1-5e7f7cef4ae1"
+          ISSUER_ID: "f1ae88c3-a7a4-4bb4-b3c1-6e7f7cef4ae1"
           APPLE_ID: "6827075952"
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
